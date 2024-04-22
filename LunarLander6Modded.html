@@ -1,0 +1,326 @@
+<DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Lander 5 Modded</title>
+		<style>
+			body {
+				background-color:#000000;
+				color: #808080;
+        margin: 0px 0px 0px 0px;
+			}
+			canvas {
+        display: block;
+        margin: auto;
+			
+			}
+			p, footer {
+				display: block;
+				margin: auto;
+				text-align: center;
+				width: 500px;
+			
+			}
+		</style>
+		
+	</head>
+	<body>
+		<canvas id="canvas" width="500" height="500">
+		Enable JavaScript to play the game.
+		</canvas>
+		<p id="output" >Spacebar: Thrust</main>
+		<script>
+const canvas = document.getElementById("canvas");
+const output = document.getElementById("output");
+const ctx = canvas.getContext("2d");
+const gravity = 0.00001;
+const thrustAcceleration = -0.000015;
+const landerHeight = 24;
+const landerWidth = 24;
+const velocitySafeMax = 0.01;
+
+const landerCenterX = canvas.width / 2; 
+const landerHeightHalf = landerHeight / 2;
+const landerWidthHalf = landerWidth / 2;
+
+const statusMargin = 8;
+const statusSize = 16; 
+
+let time0 = undefined;
+let thrustPressed = false;
+let isGameRunning = true;
+let isGameWon = false;
+let sfxThrust = new Audio("thrust.wav");
+let sfxLanded = new Audio("landed.wav");
+let sfxExplosion = new Audio("explosion.wav");
+
+
+let lander = {
+	centerY: -50 + Math.random() * 60,
+	velocityY: Math.random() * 0.01,
+  altitude: 0,
+	fuel: 1500,
+	model: [
+  
+  //left top
+		[-1/12, 0],
+		[-1/4, -1/6],
+		[-1/4, -1/3],
+		[-1/12, -1/2],
+
+  //right top
+		[1/12, -1/2],
+		[1/4, -1/3],
+		[1/4, -1/6],
+		[1/12, 0],
+    
+    //body
+		[-1/4, 0],
+		[-1/4, 1/6],
+		[1/4, 1/6],
+		[1/4, 0],
+		[-1/4, 0],
+		[-1/4, 1/6],
+
+    //left leg
+		[-5/12, 1/2],
+		[-1/2, 1/2],
+		[-1/3, 1/2],
+		[-5/12, 1/2],
+		[-1/4, 1/6],
+    
+    //thruster
+		[-1/6, 1/6],
+		[-1/4, 5/12],
+		[1/4, 5/12],
+		[1/6, 1/6],
+
+    //right leg
+		[1/4, 1/6],
+		[5/12, 1/2],
+		[1/2, 1/2],
+		[1/3, 1/2],
+
+	]
+
+};
+
+let flame = [
+
+	[-1/4, 5/12],
+	[0, 3/2],
+	[1/4, 5/12]
+
+];
+
+let terrain = {
+	landingY: 0,
+	model: []
+};
+
+
+
+
+const onPress = function(event) {
+	console.log(event);
+	if (event.keyCode === 32) {
+		output.innerHTML = "<strong>Spacebar: Thrust</strong>";
+		thrustPressed = true;
+	}
+};
+
+const onRelease = function(event) {
+	console.log(event);
+	if (event.keyCode ===32) {
+		output.innerHTML = "Spacebar: Thrust";
+		thrustPressed = false;
+	}
+};
+
+const formatNumber = function(n) {
+  return n.toFixed(2);
+};
+
+//const displayStatus = function(label, value, row, suffix) {
+
+	//ctx.fillText(label + value.toFixed(2) + suffix, 
+	//statusMargin, row * (statusMargin + statusSize));
+
+//};
+
+const generateTerrain = function() {
+	const vertices = 11;
+	const verticesHalf = Math.floor(vertices/2);
+
+	let i = 0;
+  
+	while (i < vertices + 1) {
+		terrain.model[i] = [
+			1/vertices * i, Math.random()
+		];
+
+		i = i + 1;
+	}
+	terrain.model[vertices + 1] = [1, 0];
+
+	let landingScaled = Math.random() * 0.25 + 0.75;
+	terrain.landingY = landingScaled * canvas.height;
+	terrain.model[verticesHalf][1] = landingScaled;
+	terrain.model[verticesHalf + 1][1] = landingScaled;
+};
+
+const drawModelLineTo = function(model, i, originX, originY, scaleX, scaleY)
+
+{
+	let x = originX + model[i][0] * scaleX;
+	let y = originY + model[i][1] * scaleY;
+	ctx.lineTo(x, y);
+
+};
+
+const drawModel = function(model, originX, originY,
+	 scaleX, scaleY) {
+   let i = 0;
+
+
+	ctx.beginPath();
+	ctx.moveTo(originX, originY);
+	while (i < model.length) {
+		drawModelLineTo(model, i, originX, originY, scaleX, scaleY);
+
+		i = i + 1;
+	}
+	
+	ctx.stroke();
+
+};
+
+const drawFrame = function(time1) {
+	if (time1 === undefined) {
+		time1 = 0;
+	}
+  if (time0 === undefined) {
+    time0 = time1;
+  }
+	const timeDelta = time1 - time0;
+	time0 = time1;
+
+if (isGameRunning) {
+
+// process user input
+
+	let acceleration = gravity;
+	if (thrustPressed && lander.fuel > 0) {
+		lander.fuel = lander.fuel - 1;
+		acceleration = acceleration + thrustAcceleration;
+	}
+
+	//update the game world
+
+	lander.velocityY = lander.velocityY + acceleration * timeDelta;
+	lander.centerY = lander.centerY + lander.velocityY * timeDelta;
+
+	if (lander.centerY + landerHeightHalf >= terrain.landingY) {
+		if (lander.velocityY < velocitySafeMax) {
+			console.log("Won.");
+			isGameWon = true;
+      sfxLanded.play();
+		}
+    else {
+      sfxExplosion.play();
+    }
+
+		lander.velocityY = 0; 
+		isGameRunning = false;
+		lander.centerY = terrain.landingY - landerHeightHalf; 
+		thrustPressed = false;     
+
+	}
+	lander.altitude = (terrain.landingY - (lander.centerY + landerHeightHalf));
+
+// Displaying the game world
+
+	ctx.clearRect(0,0, canvas.width, canvas.height);
+	ctx.fillStyle = "#FFFFFF";
+	ctx.strokeStyle = "#FFFFFF";
+	drawModel(terrain.model, 0, 0, canvas.width, canvas.height);
+
+	drawModel(lander.model, landerCenterX,
+		lander.centerY, 
+		landerWidth,
+		landerHeight);
+
+	if(thrustPressed && lander.fuel> 0) {
+		ctx.beginPath();
+		ctx.moveTo(landerCenterX + flame[0][0] * landerWidth, 
+			lander.centerY + flame[0][1] * landerHeight);
+
+		drawModelLineTo(flame, 1, 
+			landerCenterX, lander.centerY, 
+			landerWidth, 
+			landerHeight * (11/12 + Math.random() *1/6) );
+		drawModelLineTo(flame, 2, 
+			landerCenterX, lander.centerY, 
+			landerWidth, 
+			landerHeight);
+
+		ctx.stroke();
+    
+    if (sfxThrust.readyState && !sfxThrust.playing){
+      sfxThrust.play();
+      }
+    }
+    else {
+      sfxThrust.pause();
+    }
+
+	let danger = " DANGER";
+	if (lander.velocityY < velocitySafeMax) {
+		danger = "";
+	}
+
+	//displayStatus("Altitude: ", altitude, 1, " ");
+	//displayStatus("Speed: ", -lander.velocityY, 2, danger);
+	//displayStatus("Fuel: ", lander.fuel, 3, " ");
+  
+     ctx.fillText('Altitude: ' + formatNumber(lander.altitude),
+      statusMargin, statusMargin + statusSize);
+    ctx.fillText('Speed: ' 
+        + formatNumber(-100 * (lander.velocityY))
+        + danger,
+      statusMargin, 2 * (statusMargin + statusSize));
+    ctx.fillText('Fuel: ' + formatNumber(lander.fuel),
+      statusMargin, 3 * (statusMargin + statusSize));
+
+	if (!isGameRunning) {
+		ctx.textAlign = "center";
+		if (isGameWon) {
+			ctx.fillText ("The Eagle has Landed!",
+			canvas.width / 2,
+			canvas.height / 2);
+		}
+		else {
+			ctx.fillText("Crash!",
+			canvas.width / 2,
+			canvas.height /2);
+		}
+	}
+}
+
+
+	requestAnimationFrame(drawFrame);
+};
+
+window.addEventListener('keydown', onPress, false);
+window.addEventListener('keyup', onRelease, false);
+window.addEventListener('mousedown', onPress, false);
+
+ctx.font = statusSize + "px monospace"; 
+generateTerrain();
+drawFrame();
+document.write("<p>Loaded.</p>");
+		</script>
+		<footer>version 1.0</footer>
+	</body>
+</html>
